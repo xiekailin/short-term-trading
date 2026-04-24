@@ -1,34 +1,39 @@
 @import "tailwindcss";
 
 :root {
-  --background: #0B0E11;
-  --foreground: #EAECEF;
+  --background: #080b0f;
+  --foreground: #f3f5f7;
 
-  /* Surface */
-  --surface-base: #0B0E11;
-  --surface-card: #1E2329;
-  --surface-elevated: #2B3139;
-  --surface-hover: #363C45;
+  --surface-base: #080b0f;
+  --surface-card: #121820;
+  --surface-elevated: #1a222c;
+  --surface-hover: #222c38;
+  --surface-panel: #0f141b;
+  --surface-press: #0a0f15;
 
-  /* Gold */
-  --gold-brand: #F0B90B;
-  --gold-soft: #FCD535;
-  --gold-muted: #8E7A2E;
-  --gold-dim: #6B5F24;
+  --gold-brand: #f0b90b;
+  --gold-soft: #f8d33a;
+  --gold-muted: #b28a17;
+  --gold-dim: #5c4816;
+  --gold-veil: rgba(240, 185, 11, 0.1);
+  --gold-line: rgba(240, 185, 11, 0.28);
 
-  /* Text */
-  --text-primary: #EAECEF;
-  --text-secondary: #848E9C;
-  --text-muted: #5E6673;
+  --text-primary: #f3f5f7;
+  --text-secondary: #a5afbd;
+  --text-muted: #717d8e;
 
-  /* Semantic */
-  --up: #0ECB81;
-  --down: #F6465D;
-  --warn: #F0B90B;
+  --up: #0ecb81;
+  --down: #f6465d;
+  --warn: #f0b90b;
 
-  /* Border */
-  --border-subtle: rgba(255, 255, 255, 0.06);
-  --border-gold: rgba(240, 185, 11, 0.2);
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.14);
+  --border-gold: rgba(240, 185, 11, 0.3);
+
+  --ring-gold: rgba(240, 185, 11, 0.34);
+  --shadow-panel: 0 18px 50px rgba(0, 0, 0, 0.32);
+  --shadow-gold: 0 0 0 1px rgba(240, 185, 11, 0.1), 0 18px 46px rgba(0, 0, 0, 0.28);
+  --panel-highlight: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0));
 }
 
 @theme inline {
@@ -38,6 +43,8 @@
   --color-surface-card: var(--surface-card);
   --color-surface-elevated: var(--surface-elevated);
   --color-surface-hover: var(--surface-hover);
+  --color-surface-panel: var(--surface-panel);
+  --color-surface-press: var(--surface-press);
   --color-gold-brand: var(--gold-brand);
   --color-gold-soft: var(--gold-soft);
   --color-gold-muted: var(--gold-muted);
@@ -64,10 +71,21 @@ html {
 body {
   margin: 0;
   min-height: 100vh;
-  background: var(--background);
+  background:
+    radial-gradient(circle at 18% -10%, rgba(240, 185, 11, 0.16), transparent 28%),
+    radial-gradient(circle at 90% 10%, rgba(240, 185, 11, 0.08), transparent 24%),
+    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+    var(--background);
+  background-size: auto, auto, 42px 42px, 42px 42px, auto;
   color: var(--foreground);
   font-family: var(--font-sans), "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   line-height: 1.75;
+}
+
+body::selection {
+  background: rgba(240, 185, 11, 0.28);
+  color: #fff;
 }
 
 a {
@@ -81,15 +99,59 @@ select {
   font: inherit;
 }
 
+a,
+button,
+input,
+select {
+  transition-property: background-color, border-color, color, box-shadow, transform, opacity;
+  transition-duration: 180ms;
+  transition-timing-function: ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  a,
+  button,
+  input,
+  select {
+    transition-duration: 0ms;
+  }
+}
+
 a:focus-visible,
 button:focus-visible,
 input:focus-visible,
 select:focus-visible {
   outline: 2px solid var(--gold-brand);
   outline-offset: 2px;
+  box-shadow: 0 0 0 4px var(--ring-gold);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(240, 185, 11, 0.36) rgba(255, 255, 255, 0.04);
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.035);
+}
+
+*::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  background-color: rgba(240, 185, 11, 0.32);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(240, 185, 11, 0.48);
 }
 
 ::selection {
-  background: rgba(240, 185, 11, 0.24);
+  background: rgba(240, 185, 11, 0.28);
   color: #fff;
 }

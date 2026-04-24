@@ -8,7 +8,8 @@
 
 - 首页和详情页可以在线打开
 - 展示的是最近一次生成的市场快照
-- **不是实时行情**
+- GitHub Actions 会尝试约每 10 分钟重新生成并部署一次快照
+- **不是实时行情**，已打开的页面需要手动刷新才能看到最新部署
 - 不运行 Next.js 服务端 API Routes
 
 当前保留页面：
@@ -68,9 +69,10 @@ out/
 .github/workflows/deploy-pages.yml
 ```
 
-推送到 `main` 后会自动：
+推送到 `main`、手动触发 workflow，或 GitHub Actions 定时任务运行时会自动：
 
 - 安装依赖
+- 抓取 Yahoo 数据并生成 `src/lib/static-snapshot.ts`
 - 执行 `next build`
 - 上传 `out/`
 - 发布到 GitHub Pages
@@ -79,14 +81,21 @@ out/
 
 ## 数据说明
 
-当前站点使用仓库内已提交的静态快照数据：
+当前站点使用构建时生成的静态快照数据：
 
 - 数据文件位于 `src/lib/static-snapshot.ts`
+- 生成脚本位于 `scripts/update-static-snapshot.mjs`
 - 覆盖标的：`MSTR`、`CRCL`、`QQQ`
 - 首页、详情页都直接读取快照数据
-- 当前默认 workflow 不会在构建时重新抓取 Yahoo 数据
+- GitHub Actions 定时任务使用 `*/10 * * * *`，会尝试约每 10 分钟刷新一次
+- GitHub Actions 和 Pages 部署都有延迟，不保证精确 10 分钟
+- 已打开的浏览器页面不会自动变新，需要手动刷新页面
 
-如果后续要做“准实时更新”，可以再补一个 GitHub Actions 定时任务，自动抓取 Yahoo 数据并更新快照后重新部署。
+本地手动刷新快照：
+
+```bash
+npm run refresh:snapshot
+```
 
 ## 注意事项
 

@@ -68,6 +68,22 @@ function buildReadOnlyInfo(contract: OptionContractData, price: number, side: Op
   };
 }
 
+function toneForSpread(spread: string) {
+  if (spread === "—") return "neutral";
+  const numeric = Number.parseFloat(spread);
+  if (numeric <= 4) return "up";
+  if (numeric <= 8) return "warn";
+  return "down";
+}
+
+function spreadPillClass(spread: string) {
+  const tone = toneForSpread(spread);
+  if (tone === "up") return "border-[rgba(14,203,129,0.28)] bg-[rgba(14,203,129,0.1)] text-[var(--up)]";
+  if (tone === "warn") return "border-[var(--border-gold)] bg-[rgba(240,185,11,0.11)] text-[var(--gold-soft)]";
+  if (tone === "down") return "border-[rgba(246,70,93,0.3)] bg-[rgba(246,70,93,0.1)] text-[var(--down)]";
+  return "border-[var(--border-subtle)] bg-[rgba(255,255,255,0.03)] text-[var(--text-secondary)]";
+}
+
 export function SymbolTradingPanel({
   ticker,
   quote,
@@ -124,105 +140,193 @@ export function SymbolTradingPanel({
   }
 
   return (
-    <div className="grid gap-5 xl:grid-cols-[1.35fr_0.65fr]">
+    <div className="grid gap-5 xl:grid-cols-[minmax(0,1.55fr)_420px]">
       <Panel>
         <SectionTitle
-          title="真实期权链"
-          detail="先看流动性、点差、IV 和离现价远不远，再判断这张合约值不值得继续观察。"
+          title="期权链工作区"
+          detail="围绕现价附近筛选合约，重点观察点差、成交量、OI 和隐含波动率。"
           action={
-            <div className="flex gap-1.5">
+            <div role="group" aria-label="合约类型筛选" className="inline-flex rounded-xl border border-[var(--border-strong)] bg-[var(--surface-press)] p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
               {(["all", "call", "put"] as SideFilter[]).map((side) => (
                 <button
                   key={side}
                   type="button"
+                  aria-pressed={sideFilter === side}
                   onClick={() => handleSideChange(side)}
                   className={cx(
-                    "rounded border px-2.5 py-1 text-[11px] tracking-[0.1em] transition-colors",
+                    "rounded-lg px-3.5 py-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em]",
                     sideFilter === side
-                      ? "border-[var(--border-gold)] bg-[var(--gold-brand)]/10 text-[var(--gold-brand)]"
-                      : "border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]",
+                      ? side === "call"
+                        ? "bg-[rgba(14,203,129,0.13)] text-[var(--up)]"
+                        : side === "put"
+                          ? "bg-[rgba(246,70,93,0.13)] text-[var(--down)]"
+                          : "bg-[rgba(240,185,11,0.14)] text-[var(--gold-soft)]"
+                      : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]",
                   )}
                 >
-                  {side === "all" ? "全部" : side === "call" ? "Call" : "Put"}
+                  {side === "all" ? "ALL" : side.toUpperCase()}
                 </button>
               ))}
             </div>
           }
         />
 
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="mt-4 grid gap-2 border-b border-[var(--border-subtle)] pb-4 sm:grid-cols-2 lg:grid-cols-4">
           {expirations.map((exp, idx) => (
             <button
               key={exp}
               type="button"
+              aria-pressed={selectedExpIdx === idx}
               onClick={() => handleExpChange(idx)}
               className={cx(
-                "rounded border px-3 py-1.5 text-xs tracking-[0.1em] transition-colors",
+                "rounded-2xl border px-3.5 py-3 text-left",
                 selectedExpIdx === idx
-                  ? "border-[var(--warn)]/30 bg-[var(--warn)]/10 text-[var(--warn)]"
-                  : "border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]",
+                  ? "border-[var(--border-gold)] bg-[linear-gradient(180deg,rgba(240,185,11,0.13),rgba(240,185,11,0.04)),var(--surface-panel)] text-[var(--gold-soft)] shadow-[var(--shadow-gold)]"
+                  : "border-[var(--border-subtle)] bg-[rgba(255,255,255,0.018)] text-[var(--text-secondary)] hover:border-[var(--border-strong)] hover:bg-[rgba(255,255,255,0.03)]",
               )}
             >
-              {formatExpDate(exp)} ({formatDTEDisplay(exp)})
+              <div className="font-mono text-[11px] uppercase tracking-[0.14em]">{formatExpDate(exp)}</div>
+              <div className="mt-1 font-mono text-[10px] text-[var(--text-muted)]">{formatDTEDisplay(exp)}</div>
             </button>
           ))}
         </div>
 
-        <div className="mt-4 overflow-x-auto">
-          <table className="w-full text-left">
+        <div className="mt-4 space-y-3 md:hidden">
+          {visibleContracts.map((contract) => {
+            const active = selectedContract?.contractSymbol === contract.contractSymbol;
+            const side = getOptionSide(contract.contractSymbol);
+            const isCall = side === "call";
+            const spread = calcSpread(contract.bid, contract.ask);
+            const nearAtm = Math.abs(contract.strike - quote.price) / quote.price < 0.03;
+
+            return (
+              <button
+                key={contract.contractSymbol}
+                type="button"
+                aria-label={`${active ? "正在观察" : "观察合约"} ${contract.contractSymbol}，${isCall ? "Call" : "Put"}，行权价 ${contract.strike}，最新价 ${contract.lastPrice.toFixed(2)}，买卖价 ${contract.bid.toFixed(2)} / ${contract.ask.toFixed(2)}，隐含波动率 ${(contract.impliedVolatility * 100).toFixed(1)}%，点差 ${spread}`}
+                aria-pressed={active}
+                onClick={() => setSelectedSymbol(contract.contractSymbol)}
+                className={cx(
+                  "w-full rounded-2xl border bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.01)),var(--surface-panel)] p-4 text-left",
+                  active ? "border-[var(--border-gold)] shadow-[inset_3px_0_0_rgba(240,185,11,0.85),var(--shadow-gold)]" : "border-[var(--border-subtle)] hover:border-[var(--border-strong)]",
+                )}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <Tag tone={isCall ? "up" : "down"}>{isCall ? "Call" : "Put"}</Tag>
+                      {nearAtm ? <Tag tone="warn">ATM</Tag> : null}
+                    </div>
+                    <div className="mt-2 break-all font-mono text-[11px] leading-5 text-[var(--text-muted)]">{contract.contractSymbol}</div>
+                  </div>
+                  <span className="shrink-0 rounded-lg border border-[var(--border-gold)] bg-[rgba(240,185,11,0.08)] px-2.5 py-1 text-[10px] font-semibold text-[var(--gold-soft)]">
+                    {active ? "已选中" : "观察"}
+                  </span>
+                </div>
+
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                  <div>
+                    <div className="text-[10px] uppercase tracking-[0.12em] text-[var(--text-muted)]">Strike</div>
+                    <div className="mt-1 font-mono text-xl leading-none text-[var(--text-primary)]">${contract.strike}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] uppercase tracking-[0.12em] text-[var(--text-muted)]">Last</div>
+                    <div className="mt-1 font-mono text-xl leading-none text-[var(--text-primary)]">${contract.lastPrice.toFixed(2)}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] uppercase tracking-[0.12em] text-[var(--text-muted)]">Bid / Ask</div>
+                    <div className="mt-1 font-mono text-[12px] text-[var(--text-secondary)]">
+                      ${contract.bid.toFixed(2)} / ${contract.ask.toFixed(2)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] uppercase tracking-[0.12em] text-[var(--text-muted)]">IV / Spread</div>
+                    <div className="mt-1 flex items-center gap-2 font-mono text-[12px]">
+                      <span className="text-[var(--gold-soft)]">{(contract.impliedVolatility * 100).toFixed(1)}%</span>
+                      <span className={cx("rounded-lg border px-2 py-0.5", spreadPillClass(spread))}>{spread}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-3 border-t border-[var(--border-subtle)] pt-3 text-[11px] leading-5 text-[var(--text-muted)]">
+                  Vol <span className="font-mono text-[var(--text-secondary)]">{(contract.volume ?? 0).toLocaleString()}</span> · OI{" "}
+                  <span className="font-mono text-[var(--text-secondary)]">{(contract.openInterest ?? 0).toLocaleString()}</span>
+                </div>
+              </button>
+            );
+          })}
+          {visibleContracts.length === 0 ? <div className="rounded-xl border border-[var(--border-subtle)] px-4 py-5 text-[12px] text-[var(--text-muted)]">当前无匹配合约。</div> : null}
+        </div>
+
+        <div className="mt-4 hidden overflow-x-auto rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-panel)] md:block">
+          <table className="min-w-full text-left">
             <thead>
-              <tr className="text-[10px] tracking-[0.14em] text-[var(--text-muted)]">
-                <th className="px-3 py-2 font-normal">类型</th>
-                <th className="px-3 py-2 font-normal">Strike</th>
-                <th className="px-3 py-2 font-normal">最新价</th>
-                <th className="px-3 py-2 font-normal">Bid / Ask</th>
-                <th className="px-3 py-2 font-normal">IV</th>
-                <th className="px-3 py-2 font-normal">点差</th>
-                <th className="px-3 py-2 font-normal">Vol / OI</th>
-                <th className="px-3 py-2 font-normal">观察</th>
+              <tr className="border-b border-[var(--border-subtle)] bg-[rgba(255,255,255,0.025)] font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--text-muted)]">
+                <th className="px-3 py-3 font-medium">Contract</th>
+                <th className="px-3 py-3 font-medium">Side</th>
+                <th className="px-3 py-3 text-right font-medium">Strike</th>
+                <th className="px-3 py-3 text-right font-medium">Last</th>
+                <th className="px-3 py-3 text-right font-medium">Bid / Ask</th>
+                <th className="px-3 py-3 text-right font-medium">IV</th>
+                <th className="px-3 py-3 text-right font-medium">Spread</th>
+                <th className="px-3 py-3 text-right font-medium">Vol / OI</th>
+                <th className="px-3 py-3 text-right font-medium">Action</th>
               </tr>
             </thead>
             <tbody>
-              {visibleContracts.map((contract) => {
+              {visibleContracts.map((contract, index) => {
                 const active = selectedContract?.contractSymbol === contract.contractSymbol;
                 const side = getOptionSide(contract.contractSymbol);
                 const isCall = side === "call";
                 const iv = (contract.impliedVolatility * 100).toFixed(1);
                 const spread = calcSpread(contract.bid, contract.ask);
+                const nearAtm = Math.abs(contract.strike - quote.price) / quote.price < 0.03;
 
                 return (
                   <tr
                     key={contract.contractSymbol}
                     className={cx(
-                      "border-b border-[var(--border-subtle)] text-sm transition-colors",
-                      active ? "bg-[var(--gold-brand)]/[0.06]" : "hover:bg-[var(--surface-elevated)]",
+                      "border-b border-[var(--border-subtle)] text-sm",
+                      index % 2 === 0 ? "bg-transparent" : "bg-[rgba(255,255,255,0.012)]",
+                      active ? "bg-[linear-gradient(90deg,rgba(240,185,11,0.13),rgba(240,185,11,0.025))] shadow-[inset_3px_0_0_rgba(240,185,11,0.85)]" : "hover:bg-[rgba(255,255,255,0.03)]",
                     )}
                   >
-                    <td className="px-3 py-2.5">
-                      <Tag tone={isCall ? "up" : "down"}>{isCall ? "C" : "P"}</Tag>
+                    <td className="max-w-[172px] px-3 py-3 font-mono text-[11px] text-[var(--text-muted)]">
+                      <div className="truncate">{contract.contractSymbol}</div>
                     </td>
-                    <td className="px-3 py-2.5 font-mono text-[var(--text-primary)]">${contract.strike}</td>
-                    <td className="px-3 py-2.5 font-mono text-[var(--text-primary)]">${contract.lastPrice.toFixed(2)}</td>
-                    <td className="px-3 py-2.5 font-mono text-xs text-[var(--text-secondary)]">
+                    <td className="px-3 py-3">
+                      <div className="flex items-center gap-2">
+                        <Tag tone={isCall ? "up" : "down"}>{isCall ? "C" : "P"}</Tag>
+                        {nearAtm ? <Tag tone="warn">ATM</Tag> : null}
+                      </div>
+                    </td>
+                    <td className="px-3 py-3 text-right font-mono text-[var(--text-primary)]">${contract.strike}</td>
+                    <td className="px-3 py-3 text-right font-mono text-[var(--text-primary)]">${contract.lastPrice.toFixed(2)}</td>
+                    <td className="px-3 py-3 text-right font-mono text-[12px] text-[var(--text-secondary)]">
                       ${contract.bid.toFixed(2)} / ${contract.ask.toFixed(2)}
                     </td>
-                    <td className="px-3 py-2.5 font-mono text-[var(--gold-soft)]">{iv}%</td>
-                    <td className="px-3 py-2.5 font-mono text-xs text-[var(--text-secondary)]">{spread}</td>
-                    <td className="px-3 py-2.5 text-xs text-[var(--text-muted)]">
-                      {(contract.volume ?? 0).toLocaleString()} / {(contract.openInterest ?? 0).toLocaleString()}
+                    <td className="px-3 py-3 text-right font-mono text-[var(--gold-soft)]">{iv}%</td>
+                    <td className="px-3 py-3 text-right">
+                      <span className={cx("inline-flex rounded-lg border px-2.5 py-1 text-[11px] font-mono", spreadPillClass(spread))}>{spread}</span>
                     </td>
-                    <td className="px-3 py-2.5">
+                    <td className="px-3 py-3 text-right text-[11px] leading-5 text-[var(--text-muted)]">
+                      <div className="font-mono text-[var(--text-secondary)]">{(contract.volume ?? 0).toLocaleString()}</div>
+                      <div>OI {(contract.openInterest ?? 0).toLocaleString()}</div>
+                    </td>
+                    <td className="px-3 py-3 text-right">
                       <button
                         type="button"
+                        aria-label={`${active ? "正在观察" : "观察合约"} ${contract.contractSymbol}`}
+                        aria-pressed={active}
                         onClick={() => setSelectedSymbol(contract.contractSymbol)}
                         className={cx(
-                          "rounded border px-2.5 py-1 text-[11px] transition-colors",
+                          "rounded-lg border px-3 py-1.5 text-[10px] font-semibold tracking-[0.12em]",
                           active
-                            ? "border-[var(--border-gold)] bg-[var(--gold-brand)]/10 text-[var(--gold-brand)]"
-                            : "border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]",
+                            ? "border-[var(--border-gold)] bg-[rgba(240,185,11,0.13)] text-[var(--gold-soft)]"
+                            : "border-[var(--border-subtle)] bg-[rgba(255,255,255,0.02)] text-[var(--text-secondary)] hover:border-[var(--border-gold)] hover:text-[var(--gold-soft)]",
                         )}
                       >
-                        {active ? "正在看" : "看这张"}
+                        {active ? "已选中" : "观察"}
                       </button>
                     </td>
                   </tr>
@@ -230,47 +334,37 @@ export function SymbolTradingPanel({
               })}
             </tbody>
           </table>
-          {visibleContracts.length === 0 ? (
-            <div className="py-4 text-xs text-[var(--text-muted)]">当前无匹配合约。</div>
-          ) : null}
+          {visibleContracts.length === 0 ? <div className="px-4 py-5 text-[12px] text-[var(--text-muted)]">当前无匹配合约。</div> : null}
         </div>
       </Panel>
 
-      <div className="space-y-4">
+      <div className="space-y-4 xl:sticky xl:top-6 xl:self-start">
         <Panel>
-          <SectionTitle title="观察面板" detail="这里集中解释合约结构、流动性和波动率。" />
+          <SectionTitle title="观察笔记" detail="把选中的合约翻译成更容易判断的结构信息。" />
           <div className="mt-4 space-y-3">
-            <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-base)] px-4 py-3">
-              <div className="text-[10px] tracking-[0.14em] text-[var(--text-muted)]">当前观察对象</div>
-              <div className="mt-1 font-mono text-sm text-[var(--text-primary)]">
-                {selectedContract ? selectedContract.contractSymbol : `先从左边选一张 ${ticker} 合约`}
+            <div className="rounded-2xl border border-[var(--border-gold)] bg-[linear-gradient(135deg,rgba(240,185,11,0.14),rgba(240,185,11,0.035)_42%,rgba(255,255,255,0.012)),var(--surface-panel)] px-4 py-4 shadow-[var(--shadow-gold)]">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--gold-muted)]">selected contract</div>
+                  <div className="mt-2 break-all font-mono text-[13px] leading-6 text-[var(--text-primary)]">
+                    {selectedContract ? selectedContract.contractSymbol : `从左侧选择一张 ${ticker} 合约`}
+                  </div>
+                </div>
+                {selectedInfo ? <Tag tone={selectedInfo.isATM ? "warn" : selectedSide === "call" ? "up" : "down"}>{selectedInfo.relation}</Tag> : null}
               </div>
               {selectedInfo ? (
-                <div className="mt-1 text-xs text-[var(--text-muted)]">
-                  ${selectedContract!.strike} · {selectedSide === "call" ? "Call" : "Put"} · {selectedInfo.relation}
+                <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-[var(--text-secondary)]">
+                  <Tag tone={selectedSide === "call" ? "up" : "down"}>{selectedSide === "call" ? "Call" : "Put"}</Tag>
+                  <span className="font-mono">${selectedContract!.strike}</span>
+                  <span>离现价 {Math.abs(selectedContract!.strike - quote.price).toFixed(2)}</span>
                 </div>
               ) : null}
             </div>
 
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1">
-              <MetricCard
-                label="权利金"
-                value={selectedInfo?.premium ?? "—"}
-                detail="最新成交价只代表最近一笔，主要用来辅助观察。"
-                tone="warn"
-              />
-              <MetricCard
-                label="点差"
-                value={selectedInfo?.spread ?? "—"}
-                detail="点差越大，说明流动性越差，观察价值也会下降。"
-                tone="up"
-              />
-              <MetricCard
-                label="隐含波动率"
-                value={selectedInfo?.iv ?? "—"}
-                detail="IV 越高，说明这张期权定价越贵，对波动率变化也更敏感。"
-                tone="warn"
-              />
+              <MetricCard label="权利金" value={selectedInfo?.premium ?? "—"} detail="最新成交价只代表最近一笔，主要用来辅助观察。" tone="warn" />
+              <MetricCard label="点差" value={selectedInfo?.spread ?? "—"} detail="点差越大，说明流动性越差，观察价值也会下降。" tone={selectedInfo ? toneForSpread(selectedInfo.spread) : "neutral"} />
+              <MetricCard label="隐含波动率" value={selectedInfo?.iv ?? "—"} detail="IV 越高，说明这张期权定价越贵，对波动率变化也更敏感。" tone="warn" />
             </div>
 
             <PlainExplain title="这张该怎么看？">
@@ -281,7 +375,7 @@ export function SymbolTradingPanel({
               这页的职责是先帮你看懂合约结构、点差和波动率，不替你做动作判断。
             </PlainExplain>
 
-            <div className="rounded-lg border border-[var(--down)]/20 bg-[var(--down)]/[0.04] px-4 py-3 text-xs text-[var(--down)]">
+            <div className="rounded-2xl border border-[rgba(246,70,93,0.28)] bg-[linear-gradient(180deg,rgba(246,70,93,0.11),rgba(246,70,93,0.035)),var(--surface-panel)] px-4 py-3 text-[12px] leading-6 text-[var(--down)]">
               免费数据适合参考和观察，不适合作为高时效决策依据。它可能延迟、缺字段，也可能被限流。
             </div>
           </div>
