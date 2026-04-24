@@ -1,36 +1,95 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# short-term-trading
 
-## Getting Started
+一个面向中文用户的美股期权观察站原型，采用深色金属金风格，重点展示股票报价、波动率和期权链。
 
-First, run the development server:
+## 当前部署形态
+
+这个仓库当前面向 **GitHub Pages** 部署，属于 **纯静态站**：
+
+- 首页和详情页可以在线打开
+- 展示的是最近一次生成的市场快照
+- **不是实时行情**
+- 不运行 Next.js 服务端 API Routes
+
+当前保留页面：
+
+- `/` 观察列表
+- `/symbol/mstr`
+- `/symbol/crcl`
+- `/symbol/qqq`
+
+## 技术栈
+
+- Next.js 16
+- React 19
+- TypeScript
+- Tailwind CSS 4
+
+## 本地开发
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+打开：
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+http://localhost:3000
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 本地构建静态站
 
-## Learn More
+```bash
+npm run build
+```
 
-To learn more about Next.js, take a look at the following resources:
+构建完成后会生成静态导出目录：
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+out/
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+可以用任意静态文件服务器预览 `out/`。
 
-## Deploy on Vercel
+## GitHub Pages 部署
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+项目通过 GitHub Actions 自动部署到 GitHub Pages。
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+首次使用前请在 GitHub 仓库里确认：
+
+1. 仓库已推送到 GitHub
+2. Settings → Pages → Source 使用 GitHub Actions
+3. Actions 权限允许工作流部署 Pages
+
+工作流文件：
+
+```bash
+.github/workflows/deploy-pages.yml
+```
+
+推送到 `main` 后会自动：
+
+- 安装依赖
+- 执行 `next build`
+- 上传 `out/`
+- 发布到 GitHub Pages
+
+工作流会在 GitHub Actions 环境里自动读取当前仓库名，并生成对应的 Pages 子路径资源前缀。
+
+## 数据说明
+
+当前站点使用仓库内已提交的静态快照数据：
+
+- 数据文件位于 `src/lib/static-snapshot.ts`
+- 覆盖标的：`MSTR`、`CRCL`、`QQQ`
+- 首页、详情页都直接读取快照数据
+- 当前默认 workflow 不会在构建时重新抓取 Yahoo 数据
+
+如果后续要做“准实时更新”，可以再补一个 GitHub Actions 定时任务，自动抓取 Yahoo 数据并更新快照后重新部署。
+
+## 注意事项
+
+- GitHub Pages **不能运行**当前项目原本那套 Next.js 服务端 API
+- 因此现在页面上的行情、期权链、HV20、Expected Move 都基于快照，不是请求时动态拉取
+- 如果以后要恢复实时数据，建议切回支持 Next.js 服务端的平台，例如 Vercel

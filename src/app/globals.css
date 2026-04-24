@@ -1,26 +1,95 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #0B0E11;
+  --foreground: #EAECEF;
+
+  /* Surface */
+  --surface-base: #0B0E11;
+  --surface-card: #1E2329;
+  --surface-elevated: #2B3139;
+  --surface-hover: #363C45;
+
+  /* Gold */
+  --gold-brand: #F0B90B;
+  --gold-soft: #FCD535;
+  --gold-muted: #8E7A2E;
+  --gold-dim: #6B5F24;
+
+  /* Text */
+  --text-primary: #EAECEF;
+  --text-secondary: #848E9C;
+  --text-muted: #5E6673;
+
+  /* Semantic */
+  --up: #0ECB81;
+  --down: #F6465D;
+  --warn: #F0B90B;
+
+  /* Border */
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-gold: rgba(240, 185, 11, 0.2);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-surface-base: var(--surface-base);
+  --color-surface-card: var(--surface-card);
+  --color-surface-elevated: var(--surface-elevated);
+  --color-surface-hover: var(--surface-hover);
+  --color-gold-brand: var(--gold-brand);
+  --color-gold-soft: var(--gold-soft);
+  --color-gold-muted: var(--gold-muted);
+  --color-gold-dim: var(--gold-dim);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-up: var(--up);
+  --color-down: var(--down);
+  --color-warn: var(--warn);
+  --font-sans: var(--font-sans);
+  --font-serif: var(--font-serif);
+  --font-mono: var(--font-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--background);
 }
 
 body {
+  margin: 0;
+  min-height: 100vh;
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  line-height: 1.75;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--gold-brand);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: rgba(240, 185, 11, 0.24);
+  color: #fff;
 }
