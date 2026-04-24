@@ -8,6 +8,11 @@ const OPTION_EXPIRATION_LIMIT = 4;
 const STRIKE_WINDOW = 0.4;
 const MIN_CHART_CLOSES = 21;
 const FETCH_TIMEOUT_MS = 10_000;
+const FALLBACK_52_WEEK_RANGES = {
+  MSTR: { high: 457.22, low: 104.16 },
+  CRCL: { high: 298.99, low: 49.9 },
+  QQQ: { high: 656.92, low: 455.83 },
+};
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outputFile = path.join(rootDir, "src/lib/static-snapshot.ts");
@@ -20,6 +25,16 @@ if (proxyUrl) {
 
 function yahooUrl(pathname, params = {}) {
   const url = new URL(`https://query1.finance.yahoo.com${pathname}`);
+  for (const [key, value] of Object.entries(params)) {
+    url.searchParams.set(key, String(value));
+  }
+  return url;
+}
+
+function nasdaqUrl(symbol, endpoint, params = {}) {
+  const assetclass = symbol === "QQQ" ? "etf" : "stocks";
+  const url = new URL(`https://api.nasdaq.com/api/quote/${encodeURIComponent(symbol)}/${endpoint}`);
+  url.searchParams.set("assetclass", assetclass);
   for (const [key, value] of Object.entries(params)) {
     url.searchParams.set(key, String(value));
   }
@@ -44,6 +59,40 @@ async function fetchJson(url) {
 
 function finiteNumber(value, fallback = 0) {
   return Number.isFinite(value) ? value : fallback;
+}
+
+function parseMarketNumber(value) {
+  if (typeof value === "number") return value;
+  if (typeof value !== "string") return NaN;
+  const normalized = value.replace(/[$,%+,]/g, "").trim();
+  if (normalized === "" || normalized.toUpperCase() === "N/A" || normalized.toUpperCase() === "NA") return NaN;
+  return Number(normalized);
+}
+
+function parseNasdaqDate(value) {
+  if (typeof value !== "string") return NaN;
+
+  const parts = value.split("/");
+  if (parts.length !== 3) return NaN;
+
+  const [month, day, year] = parts.map(Number);
+  if (!month || !day || !year) return NaN;
+  return Date.UTC(year, month - 1, day) / 1000;
+}
+
+function dateInput(daysAgo) {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() - daysAgo);
+  return date.toISOString().slice(0, 10);
+}
+
+function parseFiftyTwoWeekRange(value) {
+  if (typeof value !== "string") return [NaN, NaN];
+
+  const numbers = value.match(/[-+]?[\d,]+(?:\.\d+)?/g)?.map(parseMarketNumber) ?? [];
+  if (numbers.length < 2) return [NaN, NaN];
+
+  return [Math.min(numbers[0], numbers[1]), Math.max(numbers[0], numbers[1])];
 }
 
 function requiredPositive(value, label) {
@@ -79,7 +128,7 @@ function normalizeQuoteFromChart(result, symbol, pairs) {
   };
 }
 
-async function fetchChartAndQuote(symbol) {
+async function fetchYahooChartAndQuote(symbol) {
   const data = await fetchJson(
     yahooUrl(`/v8/finance/chart/${encodeURIComponent(symbol)}`, {
       range: "3mo",
@@ -106,6 +155,74 @@ async function fetchChartAndQuote(symbol) {
       close: pairs.map((item) => item.close),
     },
   };
+}
+
+async function fetchNasdaqChartAndQuote(symbol, fallbackQuote) {
+  const [info, history] = await Promise.all([
+    fetchJson(nasdaqUrl(symbol, "info")),
+    fetchJson(
+      nasdaqUrl(symbol, "historical", {
+        fromdate: dateInput(140),
+        todate: dateInput(0),
+        limit: 9999,
+      }),
+    ),
+  ]);
+
+  const rows = history?.data?.tradesTable?.rows ?? [];
+  const pairs = rows
+    .map((row) => ({
+      timestamp: parseNasdaqDate(row.date),
+      close: parseMarketNumber(row.close),
+      high: parseMarketNumber(row.high),
+      low: parseMarketNumber(row.low),
+      volume: parseMarketNumber(row.volume),
+    }))
+    .filter((item) => Number.isFinite(item.timestamp) && Number.isFinite(item.close))
+    .sort((a, b) => a.timestamp - b.timestamp);
+
+  if (pairs.length < MIN_CHART_CLOSES) {
+    throw new Error(`${symbol} Nasdaq chart has only ${pairs.length} valid closes`);
+  }
+
+  const primaryData = info?.data?.primaryData ?? {};
+  const keyStats = info?.data?.keyStats ?? {};
+  const price = requiredPositive(parseMarketNumber(primaryData.lastSalePrice) || pairs.at(-1)?.close, `${symbol} Nasdaq price`);
+  const previousClose = requiredPositive(pairs.at(-2)?.close, `${symbol} Nasdaq previousClose`);
+  const change = Number.isFinite(parseMarketNumber(primaryData.netChange)) ? parseMarketNumber(primaryData.netChange) : price - previousClose;
+  const changePercent = Number.isFinite(parseMarketNumber(primaryData.percentageChange)) ? parseMarketNumber(primaryData.percentageChange) : (change / previousClose) * 100;
+  const [fiftyTwoWeekLow, fiftyTwoWeekHigh] = parseFiftyTwoWeekRange(keyStats.fiftyTwoWeekHighLow?.value);
+  const fallbackRange = FALLBACK_52_WEEK_RANGES[symbol];
+  const latest = pairs.at(-1);
+
+  return {
+    quote: {
+      symbol,
+      shortName: info?.data?.companyName ?? symbol,
+      price,
+      previousClose,
+      change,
+      changePercent,
+      volume: finiteNumber(parseMarketNumber(primaryData.volume), latest?.volume ?? 0),
+      dayHigh: finiteNumber(latest?.high, price),
+      dayLow: finiteNumber(latest?.low, price),
+      fiftyTwoWeekHigh: finiteNumber(fiftyTwoWeekHigh, fallbackQuote?.fiftyTwoWeekHigh ?? fallbackRange?.high ?? price),
+      fiftyTwoWeekLow: finiteNumber(fiftyTwoWeekLow, fallbackQuote?.fiftyTwoWeekLow ?? fallbackRange?.low ?? price),
+    },
+    chart: {
+      timestamp: pairs.map((item) => item.timestamp),
+      close: pairs.map((item) => item.close),
+    },
+  };
+}
+
+async function fetchChartAndQuote(symbol, fallbackQuote) {
+  try {
+    return await fetchYahooChartAndQuote(symbol);
+  } catch (error) {
+    console.warn(`Yahoo quote/chart failed for ${symbol}: ${error.message}`);
+    return fetchNasdaqChartAndQuote(symbol, fallbackQuote);
+  }
 }
 
 function normalizeContract(contract, expiration) {
@@ -227,19 +344,17 @@ async function main() {
   const quotes = [];
   const charts = {};
   const optionChains = {};
-  let fullyRefreshedCount = 0;
+  let quoteChartRefreshedCount = 0;
 
   for (const symbol of SYMBOLS) {
     console.log(`Refreshing ${symbol}...`);
     const existingQuote = existingSnapshot.quotes.find((quote) => quote.symbol === symbol);
     let quote = existingQuote;
     let chart = existingSnapshot.charts[symbol];
-    let refreshedQuoteChart = false;
-    let refreshedOptions = false;
 
     try {
-      ({ quote, chart } = await fetchChartAndQuote(symbol));
-      refreshedQuoteChart = true;
+      ({ quote, chart } = await fetchChartAndQuote(symbol, existingQuote));
+      quoteChartRefreshedCount += 1;
     } catch (error) {
       if (!quote || !chart) throw error;
       console.warn(`Using existing quote/chart for ${symbol}: ${error.message}`);
@@ -249,15 +364,10 @@ async function main() {
 
     try {
       optionChain = await fetchOptionChain(symbol, quote.price);
-      refreshedOptions = true;
     } catch (error) {
       optionChain = existingSnapshot.optionChains[symbol];
       if (!optionChain) throw error;
       console.warn(`Using existing option chain for ${symbol}: ${error.message}`);
-    }
-
-    if (refreshedQuoteChart && refreshedOptions) {
-      fullyRefreshedCount += 1;
     }
 
     quotes.push(quote);
@@ -265,11 +375,11 @@ async function main() {
     optionChains[symbol] = optionChain;
   }
 
-  if (fullyRefreshedCount !== SYMBOLS.length) {
-    console.warn("Not all symbols fully refreshed; keeping existing snapshot timestamp.");
+  if (quoteChartRefreshedCount !== SYMBOLS.length) {
+    console.warn("Not all quote/chart data refreshed; keeping existing snapshot timestamp.");
   }
 
-  const snapshotAt = fullyRefreshedCount === SYMBOLS.length ? new Date().toISOString() : existingSnapshot.snapshotAt ?? new Date().toISOString();
+  const snapshotAt = quoteChartRefreshedCount === SYMBOLS.length ? new Date().toISOString() : existingSnapshot.snapshotAt ?? new Date().toISOString();
   const source = generateSnapshotSource({ snapshotAt, quotes, charts, optionChains });
   await writeFile(outputFile, source, "utf8");
   console.log(`Wrote ${path.relative(rootDir, outputFile)} at ${snapshotAt}`);
